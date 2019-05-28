@@ -2,3 +2,6 @@ __pycache__
 .vscode
 *.json
 *.txt
+log
+models
+*.out
