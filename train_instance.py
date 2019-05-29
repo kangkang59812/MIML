@@ -37,6 +37,7 @@ def main(args):
         [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': args.fine_tune_lr},
          {'params': model.module.sub_concept_layer.parameters(), 'lr': args.learning_rate}],
     )
+    # add
     optimizer = nn.DataParallel(optimizer, device_ids=[0, 1])
     critiation = nn.BCELoss()
     critiation = nn.DataParallel(critiation, device_ids=[0, 1])
