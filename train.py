@@ -42,7 +42,7 @@ def main(args):
     model = nn.DataParallel(model, device_ids=[0, 1])
 
     optimizer = torch.optim.Adam(
-        [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': 5e-4},
+        [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': args.fine_tune_lr},
          {'params': model.module.sub_concept_layer.parameters(), 'lr': args.learning_rate}],
     )
     optimizer = nn.DataParallel(optimizer, device_ids=[0, 1])
@@ -69,7 +69,7 @@ def main(args):
                 print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, Time:{}'
                       .format(epoch, args.num_epochs, i, total_step, loss.item(), time_end-time_start))
                 time_start = time_end
-            writer.add_scalars('loss', {'loss': loss.item()}, i)
+            writer.add_scalars('loss', {'loss': loss.item()}, epoch*total_step+i)
             # if i == 10:
             #     writer.close()
         # Save the model checkpoints
@@ -100,11 +100,12 @@ if __name__ == "__main__":
 
     # paraneters
     parser.add_argument('--num_epochs', type=int, default=5)
-    parser.add_argument('--batch_size', type=int, default=64)
+    parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--L', type=int, default=1024)
     parser.add_argument('--K', type=int, default=20)
     parser.add_argument('--fine_tune', action="store_true", default=True)
     parser.add_argument('--num_workers', type=int, default=0)
-    parser.add_argument('--learning_rate', type=float, default=1e-3)
+    parser.add_argument('--fine_tune_lr', type=float, default=4e-5)
+    parser.add_argument('--learning_rate', type=float, default=4e-4)
     args = parser.parse_args()
     main(args)
