@@ -58,7 +58,7 @@ def main(args):
 
             outputs = model(images)
             loss = critiation(outputs, targets).mean()
-            
+
             model.zero_grad()
             loss.backward()
             optimizer.module.step()
@@ -69,13 +69,14 @@ def main(args):
                 print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, Time:{}'
                       .format(epoch, args.num_epochs, i, total_step, loss.item(), time_end-time_start))
                 time_start = time_end
-            writer.add_scalars('loss', {'loss': loss.item()}, epoch*total_step+i)
+            writer.add_scalars(
+                'loss', {'loss': loss.item()}, epoch*total_step+i)
             # if i == 10:
             #     writer.close()
         # Save the model checkpoints
         if (epoch+1) % args.save_step == 0:
             torch.save(model.state_dict(), os.path.join(
-                args.model_path, 'decoder-{}-{}.ckpt'.format(epoch+1, i+1)))
+                args.model_path, 'model-{}-{}.ckpt'.format(epoch+1, i+1)))
     writer.close()
 
 
