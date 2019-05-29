@@ -6,3 +6,4 @@ log
 models
 *.out
 loginstance
+log_val
