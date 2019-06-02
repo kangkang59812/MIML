@@ -14,6 +14,8 @@ from tensorboardX import SummaryWriter
 from model.miml import MIML
 from torch.optim import lr_scheduler
 from utils.utils import save_checkpoint, adjust_learning_rate
+from utils.metric import compute_mAP
+from sklearn.metrics import f1_score, average_precision_score
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 
@@ -84,7 +86,8 @@ def main(args):
         train(args, train_loader=train_loader, model=model, criterion=criterion,
               optimizer=optimizer, epoch=epoch, writer=writer)
 
-        accuracy = validate()
+        accuracy = validate(args, val_loader=val_loader, model=model, criterion=criterion,
+                            epoch=epoch, writer=writer)
 
         is_best = accuracy > best_ac
         best_ac = max(accuracy, best_ac)
@@ -93,7 +96,7 @@ def main(args):
         else:
             epochs_since_improvement = 0
 
-        save model
+        # save model
         save_checkpoint(data_name='model', epoch=epoch, epochs_since_improvement=epochs_since_improvement, model=model,
                         optimizer=optimizer, accuracy=accuracy, is_best=is_best)
     writer.close()
@@ -102,7 +105,14 @@ def main(args):
 def train(args, train_loader, model, criterion, optimizer, epoch, writer):
     model.train()
     total_step = len(train_loader)
+    mAp_sum = 0
+    f1_sum = 0
     time_start = time.time()
+    save_targets = None
+    save_outputs = None
+    mAp_by_label = 0
+    f1_by_label = 0
+    sum_loss = 0
     for i, (imgs, tars, lens) in enumerate(train_loader):
         images = imgs.cuda()
         targets = tars.float().cuda()
@@ -114,20 +124,75 @@ def train(args, train_loader, model, criterion, optimizer, epoch, writer):
         loss.backward()
         optimizer.step()
 
+        if i == 0:
+            save_targets = torch.cat([targets.detach().cpu()])
+            save_outputs = torch.cat([outputs.detach().cpu()])
+        else:
+            save_targets = torch.cat([save_targets, targets.detach().cpu()])
+            save_outputs = torch.cat([save_outputs, outputs.detach().cpu()])
+        # mAp f1 , by samples
+        mAp = average_precision_score(
+            targets.detach().cpu(), outputs.detach().cpu(), average='samples')
+        f1 = f1_score(targets.detach().cpu(),
+                      outputs.detach().cpu() >= args.threthold, average='samples')
+        mAp_sum += mAp
+        f1_sum += f1
+        sum_loss += loss.item()
         # optimizer.module.step()
         # Print log info
         if i % args.log_step == 0:
             time_end = time.time()
-            print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, Time:{}'
-                  .format(epoch, args.num_epochs, i, total_step, loss.item(), time_end-time_start))
+            print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, mAp:[{:.4f}/{:.4f}], F1:[{:.4f}/{:.4f}],Time:{}'
+                  .format(epoch, args.num_epochs, i, total_step, loss.item(), mAp, mAp_sum/(i+1), f1, f1_sum/(i+1), time_end-time_start))
             time_start = time_end
         writer.add_scalars(
-            'loss', {'loss': loss.item()}, epoch*total_step+i)
+            'train: loss/mAp,f1', {'loss': loss.item(), 'mAp': mAp, 'F1': f1}, epoch*total_step+i)
+
+    mAp_by_label = average_precision_score(save_targets, save_outputs)
+    f1_by_label = f1_score(save_targets, save_outputs >=
+                           args.threthold, average='macro')
+    writer.add_scalars(
+        'train_metric: mAp_label,f1_label', {'loss': sum_loss/total_step, 'mAp_label': mAp_by_label, 'F1': f1_by_label}, epoch)
 
 
-def validate():
-    accuracy = 0
-    return accuracy
+def validate(args, val_loader, model, criterion, epoch, writer):
+    model.eval()
+    total_step = len(val_loader)
+    time_start = time.time()
+    mAp_by_label = 0
+    f1_by_label = 0
+    sum_loss = 0
+    save_targets = None
+    save_outputs = None
+    with torch.no_grad():
+        for i, (imgs, tars, lens) in enumerate(val_loader):
+            images = imgs.cuda()
+            targets = tars.float().cuda()
+            pre = torch.zeros(args.batch_size, args.L)
+            outputs = model(images)
+            loss = criterion(outputs, targets)  # .mean()
+
+            if i == 0:
+                save_targets = torch.cat([targets.detach().cpu()])
+                save_outputs = torch.cat([outputs.detach().cpu()])
+            else:
+                save_targets = torch.cat(
+                    [save_targets, targets.detach().cpu()])
+                save_outputs = torch.cat(
+                    [save_outputs, outputs.detach().cpu()])
+
+            sum_loss += loss.item()
+            if i % args.log_step == 0:
+                time_end = time.time()
+                print('step :[{}/{}], loss:{}, Time:{}'
+                      .format(i, total_step, loss, time_end-time_start))
+                time_start = time_end
+        mAp_by_label = average_precision_score(save_targets, save_outputs)
+        f1_by_label = f1_score(save_targets, save_outputs >=
+                               args.threthold, average='macro')
+        writer.add_scalars(
+            'val_metric', {'loss': sum_loss/total_step, 'mAp': mAp_by_label, 'f1': f1_by_label}, epoch)
+    return mAp_by_label
 
 
 if __name__ == "__main__":
@@ -156,5 +221,6 @@ if __name__ == "__main__":
     parser.add_argument('--num_workers', type=int, default=0)
     parser.add_argument('--fine_tune_lr', type=float, default=1e-4)
     parser.add_argument('--learning_rate', type=float, default=2e-3)
+    parser.add_argument('--threthold', type=float, default=0.5)
     args = parser.parse_args()
     main(args)

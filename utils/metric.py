@@ -24,8 +24,8 @@ class AverageMeter(object):
 
 
 def compute_mAP(labels, outputs):
-    y_true = labels.cpu().numpy()
-    y_pred = outputs.cpu().numpy()
+    y_true = labels.numpy()
+    y_pred = outputs.numpy()
     AP = []
     for i in range(y_true.shape[0]):
         AP.append(average_precision_score(y_true[i], y_pred[i]))
