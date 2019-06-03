@@ -17,6 +17,19 @@ def adjust_learning_rate(optimizer, shrink_factor):
         optimizer.param_groups[0]['lr'], optimizer.param_groups[1]['lr']))
 
 
+def clip_gradient(optimizer, grad_clip):
+    """
+    Clips gradients computed during backpropagation to avoid explosion of gradients.
+
+    :param optimizer: optimizer with the gradients to be clipped
+    :param grad_clip: clip value
+    """
+    for group in optimizer.param_groups:
+        for param in group['params']:
+            if param.grad is not None:
+                param.grad.data.clamp_(-grad_clip, grad_clip)
+
+
 def save_checkpoint(data_name, epoch, epochs_since_improvement, model, optimizer, accuracy, is_best):
     """
     Saves model checkpoint.
