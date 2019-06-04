@@ -13,7 +13,7 @@ from utils.data_loader import get_loader
 from tensorboardX import SummaryWriter
 from model.miml import MIML
 from torch.optim import lr_scheduler
-from utils.utils import save_checkpoint, adjust_learning_rate
+from utils.utils import save_checkpoint, adjust_learning_rate, clip_gradient
 from utils.metric import compute_mAP
 from sklearn.metrics import f1_score, average_precision_score
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
@@ -47,7 +47,7 @@ def main(args):
     model = nn.DataParallel(model, device_ids=[0, 1])
     optimizer = torch.optim.Adam(
         [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': args.fine_tune_lr},
-         {'params': model.module.sub_concept_layer.parameters(), 'lr': args.learning_rate}], weight_decay=0.0005
+         {'params': model.module.sub_concept_layer.parameters(), 'lr': args.learning_rate}]
     )
 
     optimizer_SGD = torch.optim.SGD(
@@ -72,20 +72,20 @@ def main(args):
     # criterion = nn.DataParallel(criterion, device_ids=[0, 1])
     best_ac = 0
     epochs_since_improvement = 0
-    writer = SummaryWriter(log_dir='./log2')
-
+    writer = SummaryWriter(log_dir='./log3')
+    interpret = False
     if args.checkpoint is not None:
         checkpoint = torch.load(args.checkpoint)
         model = checkpoint['model']
         optimizer = checkpoint['optimizer']
         # at first I didn't add weight_decay
-        optimizer.__setattr__('weight_decay', 0.0005)
+        # optimizer.__setattr__('weight_decay', 0)
         best_ac = checkpoint['accuracy']
         epochs_since_improvement = checkpoint['epochs_since_improvement']
         ep = checkpoint['epoch']
     for epoch in range(args.num_epochs):
 
-        if epoch < ep:
+        if epoch <= ep:
             continue
         # Decay learning rate if there is no improvement for 8 consecutive epochs, and terminate training after 20
         # if epochs_since_improvement == 20:
@@ -97,13 +97,25 @@ def main(args):
             lr2 = optimizer.param_groups[1]['lr']
             optimizer = torch.optim.Adam(
                 [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': lr1},
-                 {'params': model.module.sub_concept_layer.parameters(), 'lr': lr2}], weight_decay=0.0005
+                 {'params': model.module.sub_concept_layer.parameters(), 'lr': lr2}]
             )
-            adjust_learning_rate(optimizer, 0.8)
+            adjust_learning_rate(optimizer, 0.5)
+        elif epoch % 7 == 0:
+            adjust_learning_rate(optimizer, 0.5)
 
-        # train(args, train_loader=train_loader, model=model, criterion=criterion,
-        #       optimizer=optimizer, epoch=epoch, writer=writer)
-
+        interpret = train(args, train_loader=train_loader, model=model, criterion=criterion,
+                          optimizer=optimizer, epoch=epoch, writer=writer, interpret=interpret)
+        if interpret:
+            state = {'epoch': epoch,
+                     'epochs_since_improvement': epochs_since_improvement,
+                     'accuracy': accuracy,
+                     'model': model,
+                     'optimizer': optimizer}
+            filename = os.path.join('/home/lkk/code/MIML/models',
+                                    'error_model'+'.pth.tar')
+            torch.save(state, filename)
+            break
+        
         accuracy = validate(args, val_loader=val_loader, model=model, criterion=criterion,
                             epoch=epoch, writer=writer)
 
@@ -120,7 +132,7 @@ def main(args):
     writer.close()
 
 
-def train(args, train_loader, model, criterion, optimizer, epoch, writer):
+def train(args, train_loader, model, criterion, optimizer, epoch, writer, interpret):
     model.train()
     total_step = len(train_loader)
     mAp_sum = 0
@@ -140,8 +152,13 @@ def train(args, train_loader, model, criterion, optimizer, epoch, writer):
 
         model.zero_grad()
         loss.backward()
+        if args.clip_gradient is not None:
+            clip_gradient(optimizer, args.clip_gradient)
         optimizer.step()
 
+        if loss.item() > 0.15:
+            interpret = True
+            return interpret
         if i == 0:
             save_targets = torch.cat([targets.detach().cpu()])
             save_outputs = torch.cat([outputs.detach().cpu()])
@@ -171,6 +188,7 @@ def train(args, train_loader, model, criterion, optimizer, epoch, writer):
                            args.threthold, average='macro')
     writer.add_scalars(
         'train_metric:  ', {'loss': sum_loss/total_step, 'mAp_label': mAp_by_label, 'F1': f1_by_label}, epoch)
+    return None
 
 
 def validate(args, val_loader, model, criterion, epoch, writer):
@@ -205,11 +223,14 @@ def validate(args, val_loader, model, criterion, epoch, writer):
                 print('step :[{}/{}], loss:{}, Time:{}'
                       .format(i, total_step, loss, time_end-time_start))
                 time_start = time_end
-        mAp = average_precision_score(save_targets, save_outputs, average='samples')
-        f1 = f1_score(save_targets, save_outputs >= args.threthold, average='samples')
+        mAp = average_precision_score(
+            save_targets, save_outputs, average='samples')
+        f1 = f1_score(save_targets, save_outputs >=
+                      args.threthold, average='samples')
 
         mAp_by_label = average_precision_score(save_targets, save_outputs)
-        f1_by_label = f1_score(save_targets, save_outputs >= args.threthold, average='macro')
+        f1_by_label = f1_score(save_targets, save_outputs >=
+                               args.threthold, average='macro')
 
         writer.add_scalars(
             'val_metric_by_sample', {'loss': sum_loss/total_step, 'mAp': mAp, 'f1': f1}, epoch)
@@ -236,14 +257,15 @@ if __name__ == "__main__":
                         help='step size for prining log info')
     parser.add_argument('--save_step', type=int, default=1,
                         help='step size for saving trained models')
-    parser.add_argument('--checkpoint', type=str, default='/home/lkk/code/MIML/models/BEST_checkpoint_model_epoch_5.pth.tar',
+    parser.add_argument('--checkpoint', type=str, default='/home/lkk/code/MIML/models/BEST_checkpoint_model_epoch_7.pth.tar',
                         help='load checkpoint')
 
     # paraneters
-    parser.add_argument('--num_epochs', type=int, default=10)
+    parser.add_argument('--num_epochs', type=int, default=100)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--L', type=int, default=1024)
     parser.add_argument('--K', type=int, default=20)
+    parser.add_argument('--clip_gradient', type=float, default=5.0)
     parser.add_argument('--fine_tune', action="store_true", default=True)
     parser.add_argument('--num_workers', type=int,
                         default=0)  # 0 only for debugging
