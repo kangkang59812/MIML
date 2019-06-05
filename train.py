@@ -46,8 +46,8 @@ def main(args):
     model = model.cuda()
     model = nn.DataParallel(model, device_ids=[0, 1])
     optimizer = torch.optim.Adam(
-        [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': args.fine_tune_lr},
-         {'params': model.module.sub_concept_layer.parameters(), 'lr': args.learning_rate}]
+        [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': args.fine_tune_lr, 'weight_decay': 1e-5},
+         {'params': model.module.sub_concept_layer.parameters(), 'lr': args.learning_rate, 'weight_decay': 5e-5}]
     )
 
     optimizer_SGD = torch.optim.SGD(
@@ -72,39 +72,47 @@ def main(args):
     # criterion = nn.DataParallel(criterion, device_ids=[0, 1])
     best_ac = 0
     epochs_since_improvement = 0
-    writer = SummaryWriter(log_dir='./log3')
+    writer = SummaryWriter(log_dir='./log5')
     interpret = False
-    if args.checkpoint is not None:
-        checkpoint = torch.load(args.checkpoint)
-        model = checkpoint['model']
-        optimizer = checkpoint['optimizer']
-        # at first I didn't add weight_decay
-        # optimizer.__setattr__('weight_decay', 0)
-        best_ac = checkpoint['accuracy']
-        epochs_since_improvement = checkpoint['epochs_since_improvement']
-        ep = checkpoint['epoch']
+    # if args.checkpoint is not None:
+    #     checkpoint = torch.load(args.checkpoint)
+    #     model = checkpoint['model']
+    #     optimizer = checkpoint['optimizer']
+    #     # at first I didn't add weight_decay
+    #     # optimizer.__setattr__('weight_decay', 0)
+    #     best_ac = checkpoint['accuracy']
+    #     epochs_since_improvement = checkpoint['epochs_since_improvement']
+    #     ep = checkpoint['epoch']
+
+    for group in optimizer.param_groups:
+        for param in group['params']:
+            print('L2 :{}, max :{} , min :{}, mean: {}'.format(
+                param.data.norm().item(), param.data.max().item(), param.data.min().item(),
+                param.data.mean().item()))
+
     for epoch in range(args.num_epochs):
 
-        if epoch <= ep:
-            continue
+        # if epoch <= ep:
+        #     continue
         # Decay learning rate if there is no improvement for 8 consecutive epochs, and terminate training after 20
         # if epochs_since_improvement == 20:
         #     break
 
-        if epochs_since_improvement > 0 and epochs_since_improvement % 2 == 0:
+        if epochs_since_improvement > 0 and epochs_since_improvement % 4 == 0:
             # scheduler.step()
             lr1 = optimizer.param_groups[0]['lr']
             lr2 = optimizer.param_groups[1]['lr']
             optimizer = torch.optim.Adam(
-                [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': lr1},
-                 {'params': model.module.sub_concept_layer.parameters(), 'lr': lr2}]
+                [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': lr1, 'weight_decay': 1e-5},
+                 {'params': model.module.sub_concept_layer.parameters(), 'lr': lr2, 'weight_decay': 5e-5}]
             )
             adjust_learning_rate(optimizer, 0.5)
-        elif epoch % 7 == 0:
+        elif epoch > 0 and epoch % 6 == 0:
             adjust_learning_rate(optimizer, 0.5)
 
         interpret = train(args, train_loader=train_loader, model=model, criterion=criterion,
                           optimizer=optimizer, epoch=epoch, writer=writer, interpret=interpret)
+
         if interpret:
             state = {'epoch': epoch,
                      'epochs_since_improvement': epochs_since_improvement,
@@ -114,8 +122,17 @@ def main(args):
             filename = os.path.join('/home/lkk/code/MIML/models',
                                     'error_model'+'.pth.tar')
             torch.save(state, filename)
+            for group in optimizer.param_groups:
+                for param in group['params']:
+                    print('L2 :{}, max :{} , min :{}, mean: {}'.format(
+                        param.data.norm().item(), param.data.max().item(), param.data.min().item(),
+                        param.data.mean().item()))
+            for p, group in enumerate(optimizer.param_groups):
+                for q, param in enumerate(group['params']):
+                    writer.add_histogram('error' +
+                                         str(p)+str(q), param.detach().clone().cpu().data.numpy(), epoch*total_step+i)
             break
-        
+
         accuracy = validate(args, val_loader=val_loader, model=model, criterion=criterion,
                             epoch=epoch, writer=writer)
 
@@ -180,9 +197,14 @@ def train(args, train_loader, model, criterion, optimizer, epoch, writer, interp
             print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, mAp:[{:.4f}/{:.4f}], F1:[{:.4f}/{:.4f}],Time:{}'
                   .format(epoch, args.num_epochs, i, total_step, loss.item(), mAp, mAp_sum/(i+1), f1, f1_sum/(i+1), time_end-time_start))
             time_start = time_end
+
         writer.add_scalars(
             'train:  ', {'loss': loss.item(), 'mAp': mAp, 'F1': f1}, epoch*total_step+i)
-
+        if i % 5 == 0:
+            for p, group in enumerate(optimizer.param_groups):
+                for q, param in enumerate(group['params']):
+                    writer.add_histogram(
+                        str(p)+str(q), param.detach().clone().cpu().data.numpy(), epoch*total_step+i)
     mAp_by_label = average_precision_score(save_targets, save_outputs)
     f1_by_label = f1_score(save_targets, save_outputs >=
                            args.threthold, average='macro')
@@ -265,10 +287,10 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--L', type=int, default=1024)
     parser.add_argument('--K', type=int, default=20)
-    parser.add_argument('--clip_gradient', type=float, default=5.0)
+    parser.add_argument('--clip_gradient', type=float, default=3.0)
     parser.add_argument('--fine_tune', action="store_true", default=True)
     parser.add_argument('--num_workers', type=int,
-                        default=0)  # 0 only for debugging
+                        default=1)  # 0 only for debugging
     parser.add_argument('--fine_tune_lr', type=float, default=1e-4)
     parser.add_argument('--learning_rate', type=float, default=2e-3)
     parser.add_argument('--threthold', type=float, default=0.5)
