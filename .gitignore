@@ -2,8 +2,12 @@ __pycache__
 .vscode
 *.json
 *.txt
-log
 models
 *.out
-loginstance
-log_val
+process
+*.pkl
+*.ipynb
+utils/create_file.py
+log*
+vis_
+*.jpg
