@@ -67,14 +67,14 @@ class MIML(nn.Module):
         # shape -> (n_bags, L, K, n_instances)
         conv2_out = conv2_out.reshape(-1, self.L, self.K, H*W)
         # shape -> (n_bags, L, 1, n_instances),remove dim: 1
-        maxpool1_out = self.sub_concept_layer.maxpool1(conv2_out).squeeze()
+        maxpool1_out = self.sub_concept_layer.maxpool1(conv2_out).squeeze(2)
 
         # softmax
         permute1 = maxpool1_out.permute(0, 2, 1)
         softmax1 = self.sub_concept_layer.softmax1(permute1)
         permute2 = softmax1.permute(0, 2, 1)
         # reshape = permute2.unsqueeze(2)
-        reshape = permute2.reshape(-1, self.L, 1, H*W)
+        reshape = permute2.reshape(-1, self.L, 1, H*W) # predictions_instancelevel
         # shape -> (n_bags, L, 1, 1)
         maxpool2_out = self.sub_concept_layer.maxpool2(reshape)
         out = maxpool2_out.squeeze()
