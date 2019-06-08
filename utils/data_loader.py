@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image
 import json
 import pdb
+import cv2
 
 
 class CocoDataset(data.Dataset):
@@ -32,7 +33,7 @@ class CocoDataset(data.Dataset):
         with open(origin_file, 'r') as j:
             self.origin_file = json.load(j)
 
-        self.images_id = [self.origin_file['images'][index]['imgid']
+        self.images_id = [(index, self.origin_file['images'][index]['imgid'])
                           for index in range(0, len(self.origin_file['images']))
                           if self.origin_file['images'][index]['split'] in self.split]
 
@@ -53,11 +54,11 @@ class CocoDataset(data.Dataset):
         """Returns one data pair (image and caption)."""
 
         word2id = self.vocab['word_map']
-        ID = self.images_id[index]
+        real_index = self.images_id[index][0]  # index in origin file
 
-        img_id = self.origin_file['images'][ID]['imgid']
-        path = self.origin_file['images'][ID]['filepath'] + \
-            '/'+self.origin_file['images'][ID]['filename']
+        img_id = self.origin_file['images'][real_index]['imgid']
+        path = self.origin_file['images'][real_index]['filepath'] + \
+            '/'+self.origin_file['images'][real_index]['filename']
 
         image = Image.open(os.path.join(self.root, path)).convert('RGB')
         if self.transform is not None:
@@ -68,7 +69,7 @@ class CocoDataset(data.Dataset):
                 pdb.set_trace()
         # Convert caption (string) to word ids.
         tags = []
-        t = list(map(str.lower, self.img_tags[str(ID)]))
+        t = list(map(str.lower, self.img_tags[str(real_index)]))
         tags = [word2id[token] for token in t]
         target = torch.zeros(len(word2id))
         target[list(map(lambda n:n-1, tags))]=1
@@ -77,6 +78,22 @@ class CocoDataset(data.Dataset):
 
     def __len__(self):
         return len(self.images_id)
+
+    def image_at(self, index):
+        real_index = self.images_id[index][0]  # index in origin file
+        im_id = self.origin_file['images'][real_index]['imgid']
+        path = self.origin_file['images'][real_index]['filepath'] + \
+            '/'+self.origin_file['images'][real_index]['filename']
+        im = Image.open(os.path.join(self.root, path)).convert('RGB')
+        image_data = self.transform(im)
+        tags = []
+        t = list(map(str.lower, self.img_tags[str(real_index)]))
+        tags = [self.vocab['word_map'][token] for token in t]
+        # target = torch.zeros(len(self.vocab['word_map']))
+        # target[list(map(lambda n:n-1, tags))]=1
+        # target = torch.Tensor(target)
+        # im = cv2.imread(os.path.join(self.root, path))
+        return im, image_data, t
 
 
 def collate_fn(data):
@@ -137,8 +154,14 @@ if __name__ == "__main__":
     origin_file = root+'/'+'dataset_coco.json'
     img_tags = './img_tags.json'
     voc = './vocab.json'
-    d = get_loader(root=root, origin_file=origin_file, split='train',
-                   img_tags=img_tags, vocab=voc, batch_size=8, shuffle=True, num_workers=0)
+    # d = get_loader(root=root, origin_file=origin_file, split='train',
+    #                img_tags=img_tags, vocab=voc, batch_size=1, shuffle=True, num_workers=0)
+    c = CocoDataset(root=root,
+                    origin_file=origin_file,
+                    split='train',
+                    img_tags=img_tags,
+                    vocab=voc)
+    im = c.image_at(0)
     for i, (imgs, tars, lens) in enumerate(d):
         images = imgs
         targets = tars
