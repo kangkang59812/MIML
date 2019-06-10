@@ -87,7 +87,7 @@ class CocoDataset(data.Dataset):
         im = Image.open(os.path.join(self.root, path)).convert('RGB')
         image_data = self.transform(im)
         tags = []
-        t = list(map(str.lower, self.img_tags[str(real_index)]))
+        t = list(map(str.lower, self.img_tags[str(im_id)]))
         tags = [self.vocab['word_map'][token] for token in t]
         # target = torch.zeros(len(self.vocab['word_map']))
         # target[list(map(lambda n:n-1, tags))]=1
