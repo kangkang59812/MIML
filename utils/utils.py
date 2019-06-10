@@ -47,8 +47,8 @@ def save_checkpoint(data_name, epoch, epochs_since_improvement, model, optimizer
     state = {'epoch': epoch,
              'epochs_since_improvement': epochs_since_improvement,
              'accuracy': accuracy,
-             'model': model,
-             'optimizer': optimizer}
+             'model': model.state_dict(),
+             'optimizer': optimizer.state_dict()}
     filename = os.path.join('/home/lkk/code/MIML/models',
                             'checkpoint_' + data_name + '_epoch_'+str(epoch)+'.pth.tar')
 
