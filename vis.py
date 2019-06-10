@@ -20,7 +20,7 @@ def hook(module, input, ouput):
     features.copy_(ouput.data)
     features = features.permute(0, 2, 1).reshape(-1, 1024, 1, 196)
     instance_probs = features.permute(0, 3, 1, 2)[:, :, :, 0].squeeze().cpu()
-    print("instance_probs.shape=", instance_probs.shape)
+    # print("instance_probs.shape=", instance_probs.shape)
 
     # plot instance label score
     plot_instance_probs_heatmap(instance_probs, './1.jpg')
@@ -54,7 +54,7 @@ if __name__ == "__main__":
     cls_names = vocab['map_word']
 
     checkpoint = torch.load(
-        '/home/lkk/code/MIML/models/BEST_checkpoint_model_epoch_34.pth.tar')
+        '/home/lkk/code/MIML/models/BEST_checkpoint_model_epoch_42.pth.tar')
     model = checkpoint['model']
     model.eval()
     for it in choose:
@@ -74,7 +74,9 @@ if __name__ == "__main__":
             instance_points.append(((conv_x * 16 + 8), (conv_y * 16 + 8)))
             instance_labels.append(label_name_list[_i])
         im_plot = cv2.resize(np.array(im), (224, 224)).astype(
-            np.uint8)[:, :, (2, 1, 0)]
+            np.uint8)[:, :, (0, 1, 2)]
         plot_instance_attention(im_plot, instance_points,
-                                instance_labels, save_path='./vis_/'+str(it)+'.jpg')
+                                instance_labels, save_path='./vis_4/'+str(it)+'.jpg')
         print(target)
+        print(instance_labels)
+        print('****************')
