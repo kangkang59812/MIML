@@ -46,38 +46,39 @@ def main(args):
     model = model.cuda()
     model = nn.DataParallel(model, device_ids=[0, 1])
     optimizer = torch.optim.Adam(
-        [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': args.fine_tune_lr, 'weight_decay': 1e-5},
-         {'params': model.module.sub_concept_layer.parameters(), 'lr': args.learning_rate, 'weight_decay': 5e-5}]
+        [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': args.fine_tune_lr, 'weight_decay': 2e-5},
+         {'params': model.module.sub_concept_layer.parameters(), 'lr': args.learning_rate, 'weight_decay': 4e-4}]
     )
 
-    optimizer_SGD = torch.optim.SGD(
-        [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': args.fine_tune_lr},
-         {'params': model.module.sub_concept_layer.parameters(), 'lr': args.learning_rate}],
-    )
+    # optimizer_SGD = torch.optim.SGD(
+    #     [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': args.fine_tune_lr},
+    #      {'params': model.module.sub_concept_layer.parameters(), 'lr': args.learning_rate}],
+    # )
 
-    optimizer_Momentum = torch.optim.SGD(
-        [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': args.fine_tune_lr},
-         {'params': model.module.sub_concept_layer.parameters(), 'lr': args.learning_rate}],
-        momentum=0.8
-    )
+    # optimizer_Momentum = torch.optim.SGD(
+    #     [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': args.fine_tune_lr},
+    #      {'params': model.module.sub_concept_layer.parameters(), 'lr': args.learning_rate}],
+    #     momentum=0.8
+    # )
 
-    optimizer_RMSprop = torch.optim.RMSprop(
-        [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': args.fine_tune_lr},
-         {'params': model.module.sub_concept_layer.parameters(), 'lr': args.learning_rate}],
-        alpha=0.9
-    )
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.8)
+    # optimizer_RMSprop = torch.optim.RMSprop(
+    #     [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': args.fine_tune_lr},
+    #      {'params': model.module.sub_concept_layer.parameters(), 'lr': args.learning_rate}],
+    #     alpha=0.9
+    # )
+    # scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.8)
     # optimizer = nn.DataParallel(optimizer, device_ids=[0, 1])
     criterion = nn.BCELoss()
     # criterion = nn.DataParallel(criterion, device_ids=[0, 1])
     best_ac = 0
     epochs_since_improvement = 0
-    writer = SummaryWriter(log_dir='./log5')
+    writer = SummaryWriter(log_dir='./log')
     interpret = False
+
     # if args.checkpoint is not None:
     #     checkpoint = torch.load(args.checkpoint)
-    #     model = checkpoint['model']
-    #     optimizer = checkpoint['optimizer']
+    #     model.load_state_dict(checkpoint['model'])
+    #     optimizer.load_state_dict(checkpoint['optimizer'])
     #     # at first I didn't add weight_decay
     #     # optimizer.__setattr__('weight_decay', 0)
     #     best_ac = checkpoint['accuracy']
@@ -90,6 +91,9 @@ def main(args):
                 param.data.norm().item(), param.data.max().item(), param.data.min().item(),
                 param.data.mean().item()))
 
+    print('lr1 :{}'.format(optimizer.param_groups[0]['lr']))
+    print('lr2 :{}'.format(optimizer.param_groups[1]['lr']))
+
     for epoch in range(args.num_epochs):
 
         # if epoch <= ep:
@@ -98,17 +102,19 @@ def main(args):
         # if epochs_since_improvement == 20:
         #     break
 
-        if epochs_since_improvement > 0 and epochs_since_improvement % 4 == 0:
+        if epochs_since_improvement > 0 and epochs_since_improvement % 8 == 0:
             # scheduler.step()
             lr1 = optimizer.param_groups[0]['lr']
             lr2 = optimizer.param_groups[1]['lr']
             optimizer = torch.optim.Adam(
-                [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': lr1, 'weight_decay': 1e-5},
-                 {'params': model.module.sub_concept_layer.parameters(), 'lr': lr2, 'weight_decay': 5e-5}]
+                [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': lr1, 'weight_decay': 2e-5},
+                 {'params': model.module.sub_concept_layer.parameters(), 'lr': lr2, 'weight_decay': 4e-4}]
             )
-            adjust_learning_rate(optimizer, 0.5)
-        elif epoch > 0 and epoch % 6 == 0:
-            adjust_learning_rate(optimizer, 0.5)
+            adjust_learning_rate(optimizer, 0.8)
+            epochs_since_improvement = 0
+        elif epoch > 0 and epoch % 20 == 0:
+            adjust_learning_rate(optimizer, 0.8)
+            epochs_since_improvement = 0
 
         interpret = train(args, train_loader=train_loader, model=model, criterion=criterion,
                           optimizer=optimizer, epoch=epoch, writer=writer, interpret=interpret)
@@ -117,8 +123,8 @@ def main(args):
             state = {'epoch': epoch,
                      'epochs_since_improvement': epochs_since_improvement,
                      'accuracy': accuracy,
-                     'model': model,
-                     'optimizer': optimizer}
+                     'model': model.state_dict(),
+                     'optimizer': optimizer.state_dict()}
             filename = os.path.join('/home/lkk/code/MIML/models',
                                     'error_model'+'.pth.tar')
             torch.save(state, filename)
@@ -199,7 +205,7 @@ def train(args, train_loader, model, criterion, optimizer, epoch, writer, interp
             time_start = time_end
 
         writer.add_scalars(
-            'train:  ', {'loss': loss.item(), 'mAp': mAp, 'F1': f1}, epoch*total_step+i)
+            'train: ', {'loss': loss.item(), 'mAp': mAp, 'F1': f1}, epoch*total_step+i)
         if i % 5 == 0:
             for p, group in enumerate(optimizer.param_groups):
                 for q, param in enumerate(group['params']):
@@ -279,11 +285,11 @@ if __name__ == "__main__":
                         help='step size for prining log info')
     parser.add_argument('--save_step', type=int, default=1,
                         help='step size for saving trained models')
-    parser.add_argument('--checkpoint', type=str, default='/home/lkk/code/MIML/models/BEST_checkpoint_model_epoch_7.pth.tar',
+    parser.add_argument('--checkpoint', type=str, default='/home/lkk/code/MIML/models/BEST_checkpoint_model_epoch_1.pth.tar',
                         help='load checkpoint')
 
     # paraneters
-    parser.add_argument('--num_epochs', type=int, default=100)
+    parser.add_argument('--num_epochs', type=int, default=80)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--L', type=int, default=1024)
     parser.add_argument('--K', type=int, default=20)
@@ -291,8 +297,8 @@ if __name__ == "__main__":
     parser.add_argument('--fine_tune', action="store_true", default=True)
     parser.add_argument('--num_workers', type=int,
                         default=1)  # 0 only for debugging
-    parser.add_argument('--fine_tune_lr', type=float, default=1e-4)
-    parser.add_argument('--learning_rate', type=float, default=2e-3)
+    parser.add_argument('--fine_tune_lr', type=float, default=2e-4)
+    parser.add_argument('--learning_rate', type=float, default=4e-3)
     parser.add_argument('--threthold', type=float, default=0.5)
     args = parser.parse_args()
     main(args)
