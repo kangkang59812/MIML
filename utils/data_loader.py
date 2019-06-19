@@ -8,6 +8,11 @@ from PIL import Image
 import json
 import pdb
 import cv2
+from torch.utils.data import Dataset
+import h5py
+from torch import nn
+from collections import OrderedDict
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class CocoDataset(data.Dataset):
@@ -96,6 +101,92 @@ class CocoDataset(data.Dataset):
         return im, image_data, t
 
 
+# Just for faster MIML
+class CaptionDataset(Dataset):
+    """
+    A PyTorch Dataset class to be used in a PyTorch DataLoader to create batches.
+    """
+
+    def __init__(self, data_folder, data_name, split, transform=None):
+        """
+        :param data_folder: folder where data files are stored
+        :param data_name: base name of processed datasets
+        :param split: split, one of 'TRAIN', 'VAL', or 'TEST'
+        :param transform: image transform pipeline
+        """
+        self.split = split
+        assert self.split in {'TRAIN', 'VAL', 'TEST'}
+
+        # Open hdf5 file where images are stored
+        self.train_hf = h5py.File(data_folder + '/train36.hdf5', 'r')
+        self.train_features = self.train_hf['image_features']
+        self.val_hf = h5py.File(data_folder + '/val36.hdf5', 'r')
+        self.val_features = self.val_hf['image_features']
+
+        # Captions per image
+        self.cpi = 5
+
+        # Load encoded captions
+        with open(os.path.join(data_folder, self.split + '_CAPTIONS_' + data_name + '.json'), 'r') as j:
+            self.captions = json.load(j)
+
+        # Load caption lengths
+        # with open(os.path.join(data_folder, self.split + '_CAPLENS_' + data_name + '.json'), 'r') as j:
+        #     self.caplens = json.load(j)
+
+        # Load bottom up image features distribution
+        with open(os.path.join(data_folder, self.split + '_GENOME_DETS_' + data_name + '.json'), 'r') as j:
+            self.objdet = json.load(j)
+
+        with open(os.path.join(data_folder, 'WORDMAP_' + data_name + '.json'), 'r') as j:
+            self.word_map = json.load(j)
+        self.map_word = {v: k for k, v in self.word_map.items()}
+
+        # for tags
+        with open('/home/lkk/code/MIML/vocab.json', 'r') as j:
+            self.vocab = json.load(j)
+        self.words = list(self.vocab['word_map'].keys())
+        # PyTorch transformation pipeline for the image (normalizing, etc.)
+        self.transform = transform
+
+        # Total number of datapoints
+        self.dataset_size = len(self.captions)
+
+    def __getitem__(self, i):
+
+        # The Nth caption corresponds to the (N // captions_per_image)th image
+        objdet = self.objdet[i // self.cpi]
+
+        # Load bottom up image features
+        if objdet[0] == "v":
+            img = torch.FloatTensor(self.val_features[objdet[1]])
+        else:
+            img = torch.FloatTensor(self.train_features[objdet[1]])
+        img = img.unsqueeze(-1)
+        caption = self.captions[i]
+        # for index in caption:
+        #     if index not in self.map_word.keys():
+        tags = []
+        caption = list(set(map(lambda x: self.map_word[x], caption)))
+        remove = ['<start>', '<end>', '<pad>', '<unk>']
+        for r in remove:
+            if r in caption:
+                caption.remove(r)
+
+        for word in caption:
+            if word in self.words:
+                tags.append(self.vocab['word_map'][word])
+
+        target = torch.zeros(len(self.vocab['word_map']))
+        target[list(map(lambda n:n-1, tags))]=1
+        target = torch.Tensor(target)
+
+        return img, target
+
+    def __len__(self):
+        return self.dataset_size
+
+
 def collate_fn(data):
     """Creates mini-batch tensors from the list of tuples (image, caption).
 
@@ -130,6 +221,7 @@ def collate_fn(data):
 def get_loader(root, origin_file, split, img_tags, vocab, batch_size, shuffle, num_workers):
     """Returns torch.utils.data.DataLoader for custom coco dataset."""
     # COCO caption dataset
+
     coco = CocoDataset(root=root,
                        origin_file=origin_file,
                        split=split,
@@ -149,23 +241,53 @@ def get_loader(root, origin_file, split, img_tags, vocab, batch_size, shuffle, n
     return data_loader
 
 
+def get_loader2(data_folder, data_name, split, batch_size, shuffle, num_workers, transform=None):
+    """Returns torch.utils.data.DataLoader for custom coco dataset."""
+    # COCO caption dataset
+
+    coco = CaptionDataset(data_folder, data_name, split, transform)
+
+    # Data loader for COCO dataset
+    # This will return (images, captions, lengths) for each iteration.
+    # images: a tensor of shape (batch_size, 3, 224, 224).
+    # captions: a tensor of shape (batch_size, padded_length).
+    # lengths: a list indicating valid length for each caption. length is (batch_size).
+    data_loader = torch.utils.data.DataLoader(dataset=coco,
+                                              batch_size=batch_size,
+                                              shuffle=shuffle,
+                                              num_workers=num_workers,
+                                              collate_fn=collate_fn)
+    return data_loader
+
+
 if __name__ == "__main__":
-    root = '/home/lkk/datasets/coco2014'
-    origin_file = root+'/'+'dataset_coco.json'
-    img_tags = './img_tags.json'
-    voc = './vocab.json'
+    data_folder = '/home/lkk/dataset'
+    data_name = 'coco_5_cap_per_img_5_min_word_freq'
+    d = get_loader2(data_folder=data_folder, data_name=data_name, split='TRAIN',
+                    batch_size=8, shuffle=True, num_workers=0)
+    for i, (imgs, caps, caplens) in enumerate(d):
+
+        # Move to GPU, if available
+        imgs = imgs.to(device)
+        caps = caps.to(device)
+        
+        print('')
+    # root = '/home/lkk/datasets/coco2014'
+    # origin_file = root+'/'+'dataset_coco.json'
+    # img_tags = './img_tags.json'
+    # voc = './vocab.json'
     # d = get_loader(root=root, origin_file=origin_file, split='train',
     #                img_tags=img_tags, vocab=voc, batch_size=1, shuffle=True, num_workers=0)
-    c = CocoDataset(root=root,
-                    origin_file=origin_file,
-                    split='train',
-                    img_tags=img_tags,
-                    vocab=voc)
-    im = c.image_at(0)
-    for i, (imgs, tars, lens) in enumerate(d):
-        images = imgs
-        targets = tars
-        lengths = lens
-        print(images.shape, targets.shape)
-        if i == 2:
-            break
+    # c = CocoDataset(root=root,
+    #                 origin_file=origin_file,
+    #                 split='train',
+    #                 img_tags=img_tags,
+    #                 vocab=voc)
+    # im = c.image_at(0)
+    # for i, (imgs, tars, lens) in enumerate(d):
+    #     images = imgs
+    #     targets = tars
+    #     lengths = lens
+    #     print(images.shape, targets.shape)
+    #     if i == 2:
+    #         break
