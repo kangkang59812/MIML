@@ -107,9 +107,9 @@ class Faster_MIML(nn.Module):
         self.K = K
 
         self.sub_concept_layer = nn.Sequential(OrderedDict([
-            ('conv1', nn.Conv2d(36, 36, 1)),
+            ('conv1', nn.Conv2d(36, 512, 1)),
             ('dropout1', nn.Dropout(0)),  # (-1,512,14,14)
-            ('conv2', nn.Conv2d(36, K*L, 1)),
+            ('conv2', nn.Conv2d(512, K*L, 1)),
             # input need reshape to (-1,L,K,H*W)
             ('maxpool1', nn.MaxPool2d((K, 1))),
             # reshape input to (-1,L,H*W), # permute(0,2,1)
@@ -138,10 +138,9 @@ class Faster_MIML(nn.Module):
     def forward(self, x):
         # IN:(8,3,224,224)-->OUT:(8,512,14,14)
 
-        # C,H,W = 512,14,14
-        _, C, D, _ = x.shape
         # OUT:(8,512,14,14)
-
+       
+        _,C,D,_ = x.shape
         conv1_out = self.sub_concept_layer.dropout1(
             self.sub_concept_layer.conv1(x))
 
@@ -172,11 +171,11 @@ class Faster_MIML(nn.Module):
 
 
 if __name__ == "__main__":
-    # model = Faster_MIML()
-    # out = model(torch.randn(8, 36, 2048, 1))
-    # print(out.shape)
-    # summary(model.cuda(), (36, 2048, 1), 8)
-    model = MIML()
-    out = model(torch.randn(8,3,334,334))
+    model = Faster_MIML()
+    out = model(torch.randn(8, 36, 2048, 1))
     print(out.shape)
     summary(model.cuda(), (36, 2048, 1), 8)
+    # model = MIML()
+    # out = model(torch.randn(8,3,334,334))
+    # print(out.shape)
+    # summary(model.cuda(), (36, 2048, 1), 8)
