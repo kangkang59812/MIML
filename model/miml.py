@@ -74,7 +74,8 @@ class MIML(nn.Module):
         softmax1 = self.sub_concept_layer.softmax1(permute1)
         permute2 = softmax1.permute(0, 2, 1)
         # reshape = permute2.unsqueeze(2)
-        reshape = permute2.reshape(-1, self.L, 1, H*W) # predictions_instancelevel
+        # predictions_instancelevel
+        reshape = permute2.reshape(-1, self.L, 1, H*W)
         # shape -> (n_bags, L, 1, 1)
         maxpool2_out = self.sub_concept_layer.maxpool2(reshape)
         out = maxpool2_out.squeeze()
@@ -91,8 +92,91 @@ class MIML(nn.Module):
                 p.requires_grad = True
 
 
+class Faster_MIML(nn.Module):
+
+    def __init__(self, L=1024, K=20, freeze=True):
+        """
+        Arguments:
+            L (int):
+                number of labels
+            K (int):
+                number of sub categories
+        """
+        super(Faster_MIML, self).__init__()
+        self.L = L
+        self.K = K
+
+        self.sub_concept_layer = nn.Sequential(OrderedDict([
+            ('conv1', nn.Conv2d(36, 36, 1)),
+            ('dropout1', nn.Dropout(0)),  # (-1,512,14,14)
+            ('conv2', nn.Conv2d(36, K*L, 1)),
+            # input need reshape to (-1,L,K,H*W)
+            ('maxpool1', nn.MaxPool2d((K, 1))),
+            # reshape input to (-1,L,H*W), # permute(0,2,1)
+            ('softmax1', nn.Softmax(dim=2)),
+            # permute(0,2,1) # reshape to (-1,L,1,H*W)
+            ('maxpool2', nn.MaxPool2d((1, 2048)))
+        ]))
+
+        if freeze:
+            self.freeze_all()
+        # self.conv1 = nn.Conv2d(512, 512, 1))
+
+        # self.dropout1=nn.Dropout(0.5)
+
+        # self.conv2=nn.Conv2d(512, K*L, 1)
+        # # input need reshape to (-1,L,K,H*W)
+        # self.maxpool1=nn.MaxPool2d((K, 1))
+        # # reshape input to (-1,L,H*W)
+        # # permute(0,2,1)
+        # self.softmax1=nn.Softmax(dim = 2)
+        # # permute(0,2,1)
+        # # reshape to (-1,L,1,H*W)
+        # self.maxpool2=nn.MaxPool2d((1, 196))
+        # # squeeze()
+
+    def forward(self, x):
+        # IN:(8,3,224,224)-->OUT:(8,512,14,14)
+
+        # C,H,W = 512,14,14
+        _, C, D, _ = x.shape
+        # OUT:(8,512,14,14)
+
+        conv1_out = self.sub_concept_layer.dropout1(
+            self.sub_concept_layer.conv1(x))
+
+        # shape -> (n_bags, (L * K), n_instances, 1)
+        conv2_out = self.sub_concept_layer.conv2(conv1_out)
+        # shape -> (n_bags, L, K, n_instances)
+        conv2_out = conv2_out.reshape(-1, self.L, self.K, D)
+        # shape -> (n_bags, L, 1, n_instances),remove dim: 1
+        maxpool1_out = self.sub_concept_layer.maxpool1(conv2_out).squeeze(2)
+
+        # softmax
+        permute1 = maxpool1_out.permute(0, 2, 1)
+        softmax1 = self.sub_concept_layer.softmax1(permute1)
+        permute2 = softmax1.permute(0, 2, 1)
+        # reshape = permute2.unsqueeze(2)
+        # predictions_instancelevel
+        reshape = permute2.reshape(-1, self.L, 1, D)
+        # shape -> (n_bags, L, 1, 1)
+        maxpool2_out = self.sub_concept_layer.maxpool2(reshape)
+        out = maxpool2_out.squeeze()
+
+        return out
+
+    def freeze_all(self):
+
+        for p in self.sub_concept_layer:
+            p.requires_grad = False
+
+
 if __name__ == "__main__":
+    # model = Faster_MIML()
+    # out = model(torch.randn(8, 36, 2048, 1))
+    # print(out.shape)
+    # summary(model.cuda(), (36, 2048, 1), 8)
     model = MIML()
-    out = model(torch.randn(8, 3, 224, 224))
+    out = model(torch.randn(8,3,334,334))
     print(out.shape)
-    summary(model.cuda(), (3, 224, 224), 8)
+    summary(model.cuda(), (36, 2048, 1), 8)
