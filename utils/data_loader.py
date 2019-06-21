@@ -74,7 +74,8 @@ class CocoDataset(data.Dataset):
                 pdb.set_trace()
         # Convert caption (string) to word ids.
         tags = []
-        t = list(map(str.lower, self.img_tags[str(real_index)]))
+        random_choice = np.random.choice(self.img_tags[str(real_index)])
+        t = list(map(str.lower, random_choice))
         tags = [word2id[token] for token in t]
         target = torch.zeros(len(word2id))
         target[list(map(lambda n:n-1, tags))]=1
@@ -92,7 +93,8 @@ class CocoDataset(data.Dataset):
         im = Image.open(os.path.join(self.root, path)).convert('RGB')
         image_data = self.transform(im)
         tags = []
-        t = list(map(str.lower, self.img_tags[str(im_id)]))
+        random_choice = np.random.choice(self.img_tags[str(real_index)])
+        t = list(map(str.lower, random_choice))
         tags = [self.vocab['word_map'][token] for token in t]
         # target = torch.zeros(len(self.vocab['word_map']))
         # target[list(map(lambda n:n-1, tags))]=1
@@ -261,33 +263,33 @@ def get_loader2(data_folder, data_name, split, batch_size, shuffle, num_workers,
 
 
 if __name__ == "__main__":
-    data_folder = '/home/lkk/dataset'
-    data_name = 'coco_5_cap_per_img_5_min_word_freq'
-    d = get_loader2(data_folder=data_folder, data_name=data_name, split='TRAIN',
-                    batch_size=8, shuffle=True, num_workers=0)
-    for i, (imgs, caps, caplens) in enumerate(d):
+    # data_folder = '/home/lkk/dataset'
+    # data_name = 'coco_5_cap_per_img_5_min_word_freq'
+    # d = get_loader2(data_folder=data_folder, data_name=data_name, split='TRAIN',
+    #                 batch_size=8, shuffle=True, num_workers=0)
+    # for i, (imgs, caps, caplens) in enumerate(d):
 
-        # Move to GPU, if available
-        imgs = imgs.to(device)
-        caps = caps.to(device)
+    #     # Move to GPU, if available
+    #     imgs = imgs.to(device)
+    #     caps = caps.to(device)
         
-        print('')
-    # root = '/home/lkk/datasets/coco2014'
-    # origin_file = root+'/'+'dataset_coco.json'
-    # img_tags = './img_tags.json'
-    # voc = './vocab.json'
-    # d = get_loader(root=root, origin_file=origin_file, split='train',
-    #                img_tags=img_tags, vocab=voc, batch_size=1, shuffle=True, num_workers=0)
-    # c = CocoDataset(root=root,
-    #                 origin_file=origin_file,
-    #                 split='train',
-    #                 img_tags=img_tags,
-    #                 vocab=voc)
-    # im = c.image_at(0)
-    # for i, (imgs, tars, lens) in enumerate(d):
-    #     images = imgs
-    #     targets = tars
-    #     lengths = lens
-    #     print(images.shape, targets.shape)
-    #     if i == 2:
-    #         break
+    #     print('')
+    root = '/home/lkk/datasets/coco2014'
+    origin_file = root+'/'+'dataset_coco.json'
+    img_tags = './new_img_tags.json'
+    voc = './vocab.json'
+    d = get_loader(root=root, origin_file=origin_file, split='train',
+                   img_tags=img_tags, vocab=voc, batch_size=1, shuffle=True, num_workers=0)
+    c = CocoDataset(root=root,
+                    origin_file=origin_file,
+                    split='train',
+                    img_tags=img_tags,
+                    vocab=voc)
+    im = c.image_at(0)
+    for i, (imgs, tars, lens) in enumerate(d):
+        images = imgs
+        targets = tars
+        lengths = lens
+        print(images.shape, targets)
+        if i == 2:
+            break
