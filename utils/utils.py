@@ -34,7 +34,7 @@ def clip_gradient(optimizer, grad_clip):
                 param.grad.data.clamp_(-grad_clip, grad_clip)
 
 
-def save_checkpoint(data_name, epoch, epochs_since_improvement, model, optimizer, accuracy, is_best):
+def save_checkpoint(data_name, args, epoch, epochs_since_improvement, model, optimizer, accuracy, is_best):
     """
     Saves model checkpoint.
 
@@ -44,11 +44,18 @@ def save_checkpoint(data_name, epoch, epochs_since_improvement, model, optimizer
     :param bleu4: validation BLEU-4 score for this epoch
     :param is_best: is this checkpoint the best so far?
     """
-    state = {'epoch': epoch,
-             'epochs_since_improvement': epochs_since_improvement,
-             'accuracy': accuracy,
-             'model': model.state_dict(),
-             'optimizer': optimizer.state_dict()}
+    if args.mGPUs:
+        state = {'epoch': epoch,
+                 'epochs_since_improvement': epochs_since_improvement,
+                 'accuracy': accuracy,
+                 'model': model.module.state_dict(),
+                 'optimizer': optimizer.state_dict()}
+    else:
+        state = {'epoch': epoch,
+                 'epochs_since_improvement': epochs_since_improvement,
+                 'accuracy': accuracy,
+                 'model': model.state_dict(),
+                 'optimizer': optimizer.state_dict()}
     filename = os.path.join('/home/lkk/code/MIML/models',
                             'checkpoint_' + data_name + '_epoch_'+str(epoch)+'.pth.tar')
 
@@ -109,7 +116,6 @@ def plot_instance_probs_heatmap(instance_probs, save_path=None):
         fig.savefig(save_path)
     else:
         plt.show()
-        print('x')
 
 
 if __name__ == "__main__":
