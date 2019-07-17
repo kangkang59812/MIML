@@ -8,7 +8,7 @@ device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 
 class MIML(nn.Module):
 
-    def __init__(self, L=1024, K=20, batch_size=8, fine_tune=True):
+    def __init__(self, L=1024, K=20, batch_size=8, base_model='vgg',  fine_tune=True):
         """
         Arguments:
             L (int):
@@ -20,22 +20,41 @@ class MIML(nn.Module):
         self.L = L
         self.K = K
         self.batch_size = batch_size
+        self.b = base_model
         # pretrained ImageNet VGG
-        base_model = torchvision.models.vgg16(pretrained=True)
-        base_model = list(base_model.features)[:-1]
-        self.base_model = nn.Sequential(*base_model)
+        if base_model == 'vgg':
+            # pretrained ImageNet VGG
+            base_model = torchvision.models.vgg16(pretrained=True)
+            base_model = list(base_model.features)[:-1]
+            self.base_model = nn.Sequential(*base_model)
+            dim = 512
+            map_size = 196
+        elif base_model == 'resnet':
+            base_model = torchvision.models.resnet101(
+                pretrained=True)
+            self.base_model = torch.nn.Sequential(OrderedDict([
+                ('conv1', base_model.conv1),
+                ('bn1', base_model.bn1),
+                ('relu', base_model.relu),
+                ('maxpool', base_model.maxpool),
+                ('layer1', base_model.layer1),
+                ('layer2', base_model.layer2),
+                ('layer3', base_model.layer3),
+                ('layer4', base_model.layer4)
+            ]))
+            dim = 2048
+            map_size = 49
         self.fine_tune(fine_tune)
-
         self.sub_concept_layer = nn.Sequential(OrderedDict([
-            ('conv1', nn.Conv2d(512, 512, 1)),
-            ('dropout1', nn.Dropout(0)),  # (-1,512,14,14)
+            ('conv1', nn.Conv2d(dim, 512, 1)),
+            ('dropout1', nn.Dropout(0.5)),  # (-1,512,14,14)
             ('conv2', nn.Conv2d(512, K*L, 1)),
             # input need reshape to (-1,L,K,H*W)
             ('maxpool1', nn.MaxPool2d((K, 1))),
             # reshape input to (-1,L,H*W), # permute(0,2,1)
             ('softmax1', nn.Softmax(dim=2)),
             # permute(0,2,1) # reshape to (-1,L,1,H*W)
-            ('maxpool2', nn.MaxPool2d((1, 196)))
+            ('maxpool2', nn.MaxPool2d((1, map_size)))
         ]))
         # self.conv1 = nn.Conv2d(512, 512, 1))
 
@@ -54,7 +73,10 @@ class MIML(nn.Module):
 
     def forward(self, x):
         # IN:(8,3,224,224)-->OUT:(8,512,14,14)
-        base_out = self.base_model(x)
+        if self.b == 'vgg':
+            base_out = self.base_model(x)
+        elif self.b == 'resnet':
+            base_out = self.base_model(x)
         # C,H,W = 512,14,14
         _, C, H, W = base_out.shape
         # OUT:(8,512,14,14)
@@ -84,17 +106,23 @@ class MIML(nn.Module):
 
     def fine_tune(self, fine_tune=True):
         # only fine_tune the last three convs
-        layer = -6
-        for p in self.base_model.parameters():
-            p.requires_grad = False
-        for c in list(self.base_model.children())[-6:]:
-            for p in c.parameters():
-                p.requires_grad = True
-
+        if self.b == 'vgg':
+            layer = -6
+            for p in self.base_model.parameters():
+                p.requires_grad = False
+            for c in list(self.base_model.children())[-6:]:
+                for p in c.parameters():
+                    p.requires_grad = True
+        elif self.b == 'resnet':
+            for p in self.base_model.parameters():
+                p.requires_grad = False
+            for p in list(self.base_model.parameters())[-9:]:
+                p.requires_grad = fine_tune
+    
 
 class Faster_MIML(nn.Module):
 
-    def __init__(self, L=1024, K=20, freeze=True):
+    def __init__(self, L=1024, K=20):
         """
         Arguments:
             L (int):
@@ -107,9 +135,9 @@ class Faster_MIML(nn.Module):
         self.K = K
 
         self.sub_concept_layer = nn.Sequential(OrderedDict([
-            ('conv1', nn.Conv2d(36, 512, 1)),
+            ('conv1', nn.Conv2d(36, 128, 1)),
             ('dropout1', nn.Dropout(0)),  # (-1,512,14,14)
-            ('conv2', nn.Conv2d(512, K*L, 1)),
+            ('conv2', nn.Conv2d(128, K*L, 1)),
             # input need reshape to (-1,L,K,H*W)
             ('maxpool1', nn.MaxPool2d((K, 1))),
             # reshape input to (-1,L,H*W), # permute(0,2,1)
@@ -117,9 +145,7 @@ class Faster_MIML(nn.Module):
             # permute(0,2,1) # reshape to (-1,L,1,H*W)
             ('maxpool2', nn.MaxPool2d((1, 2048)))
         ]))
-
-        if freeze:
-            self.freeze_all()
+        
         # self.conv1 = nn.Conv2d(512, 512, 1))
 
         # self.dropout1=nn.Dropout(0.5)
@@ -164,10 +190,6 @@ class Faster_MIML(nn.Module):
 
         return out
 
-    def freeze_all(self):
-
-        for p in self.sub_concept_layer:
-            p.requires_grad = False
 
 
 if __name__ == "__main__":

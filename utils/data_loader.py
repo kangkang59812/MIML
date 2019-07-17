@@ -66,16 +66,17 @@ class CocoDataset(data.Dataset):
             '/'+self.origin_file['images'][real_index]['filename']
 
         image = Image.open(os.path.join(self.root, path)).convert('RGB')
+
         if self.transform is not None:
             try:
                 image = self.transform(image)
             except:
                 print('ssssss')
+                print(path)
                 pdb.set_trace()
         # Convert caption (string) to word ids.
         tags = []
-        random_choice = np.random.choice(self.img_tags[str(real_index)])
-        t = list(map(str.lower, random_choice))
+        t = list(map(str.lower, self.img_tags[str(img_id)]))
         tags = [word2id[token] for token in t]
         target = torch.zeros(len(word2id))
         target[list(map(lambda n:n-1, tags))]=1
@@ -94,6 +95,7 @@ class CocoDataset(data.Dataset):
         image_data = self.transform(im)
         tags = []
         random_choice = np.random.choice(self.img_tags[str(real_index)])
+
         t = list(map(str.lower, random_choice))
         tags = [self.vocab['word_map'][token] for token in t]
         # target = torch.zeros(len(self.vocab['word_map']))
@@ -192,10 +194,10 @@ class CaptionDataset(Dataset):
 def collate_fn(data):
     """Creates mini-batch tensors from the list of tuples (image, caption).
 
-    We should build custom collate_fn rather than using default collate_fn, 
+    We should build custom collate_fn rather than using default collate_fn,
     because merging caption (including padding) is not supported in default.
     Args:
-        data: list of tuple (image, caption). 
+        data: list of tuple (image, caption).
             - image: torch tensor of shape (3, 256, 256).
             - caption: torch tensor of shape (?); variable length.
     Returns:
@@ -257,8 +259,8 @@ def get_loader2(data_folder, data_name, split, batch_size, shuffle, num_workers,
     data_loader = torch.utils.data.DataLoader(dataset=coco,
                                               batch_size=batch_size,
                                               shuffle=shuffle,
-                                              num_workers=num_workers,
-                                              collate_fn=collate_fn)
+                                              num_workers=num_workers)
+                                                # collate_fn=collate_fn)
     return data_loader
 
 
@@ -272,7 +274,7 @@ if __name__ == "__main__":
     #     # Move to GPU, if available
     #     imgs = imgs.to(device)
     #     caps = caps.to(device)
-        
+
     #     print('')
     root = '/home/lkk/datasets/coco2014'
     origin_file = root+'/'+'dataset_coco.json'
