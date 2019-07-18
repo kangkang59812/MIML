@@ -51,39 +51,24 @@ def main(args):
     if args.mGPUs:
         model = nn.DataParallel(model, device_ids=[0, 1])
 
-    # optimizer_SGD = torch.optim.SGD(
-    #     [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': args.fine_tune_lr},
-    #      {'params': model.module.sub_concept_layer.parameters(), 'lr': args.learning_rate}],
-    # )
-
-    # optimizer_Momentum = torch.optim.SGD(
-    #     [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': args.fine_tune_lr},
-    #      {'params': model.module.sub_concept_layer.parameters(), 'lr': args.learning_rate}],
-    #     momentum=0.8
-    # )
-
-    # optimizer_RMSprop = torch.optim.RMSprop(
-    #     [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': args.fine_tune_lr},
-    #      {'params': model.module.sub_concept_layer.parameters(), 'lr': args.learning_rate}],
-    #     alpha=0.9
-    # )
-    # scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.8)
-    # optimizer = nn.DataParallel(optimizer, device_ids=[0, 1])
     criterion = nn.BCELoss()
-    # criterion = nn.DataParallel(criterion, device_ids=[0, 1])
+
     best_ac = 0
     epochs_since_improvement = 0
     writer = SummaryWriter(log_dir='./log')
     interpret = False
 
-    # if args.checkpoint is not None:
-    #     checkpoint = torch.load(args.checkpoint)
-    #     model.load_state_dict(checkpoint['model'])
-    #     optimizer.load_state_dict(checkpoint['optimizer'])
-    #     best_ac = checkpoint['accuracy']
-    #     epochs_since_improvement = checkpoint['epochs_since_improvement']
-    #     ep = checkpoint['epoch']
+    if args.checkpoint is not None:
+        checkpoint = torch.load(args.checkpoint)
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        best_ac = checkpoint['accuracy']
+        epochs_since_improvement = checkpoint['epochs_since_improvement']
+        ep = checkpoint['epoch']
+        if args.mGPUs:
 
+            model.module.load_state_dict(checkpoint['model'])
+        else:
+            model.load_state_dict(checkpoint['model'])
     for group in optimizer.param_groups:
         for param in group['params']:
             print('L2 :{}, max :{} , min :{}, mean: {}'.format(
@@ -93,13 +78,7 @@ def main(args):
     print('lr1 :{}'.format(optimizer.param_groups[0]['lr']))
     print('lr2 :{}'.format(optimizer.param_groups[1]['lr']))
 
-    for epoch in range(args.num_epochs):
-
-        # if epoch <= ep:
-        #     continue
-        # Decay learning rate if there is no improvement for 8 consecutive epochs, and terminate training after 20
-        # if epochs_since_improvement == 20:
-        #     break
+    for epoch in range(ep, args.num_epochs):
 
         if epochs_since_improvement > 0 and epochs_since_improvement % 5 == 0:
             # scheduler.step()
@@ -109,10 +88,10 @@ def main(args):
             #     [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': lr1, 'weight_decay': 0},
             #      {'params': model.module.sub_concept_layer.parameters(), 'lr': lr2, 'weight_decay': 0}]
             # )
-            adjust_learning_rate(optimizer, 0.9)
+            adjust_learning_rate(optimizer, 0.6)
             epochs_since_improvement = 0
-        elif epoch > 0 and epoch % 20 == 0:
-            adjust_learning_rate(optimizer, 0.9)
+        elif epoch > 0 and epoch % 9 == 0:
+            adjust_learning_rate(optimizer, 0.6)
             epochs_since_improvement = 0
 
         interpret = train(args, train_loader=train_loader, model=model, criterion=criterion,
@@ -263,7 +242,7 @@ if __name__ == "__main__":
                         help='step size for prining log info')
     parser.add_argument('--save_step', type=int, default=1,
                         help='step size for saving trained models')
-    parser.add_argument('--checkpoint', type=str, default='/home/lkk/code/MIML/models/BEST.pth.tar',
+    parser.add_argument('--checkpoint', type=str, default='/home/lkk/code/MIML/models/checkpoint_ResNet_epoch_9.pth.tar',
                         help='load checkpoint')
     parser.add_argument('--mGPUs', type=bool, default=True,
                         help='use multi gpus')
