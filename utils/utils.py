@@ -34,7 +34,7 @@ def clip_gradient(optimizer, grad_clip):
                 param.grad.data.clamp_(-grad_clip, grad_clip)
 
 
-def save_checkpoint(data_name, args, epoch, epochs_since_improvement, model, optimizer, accuracy, is_best):
+def save_checkpoint(data_name, args, epoch, epochs_since_improvement, model, optimizer, scheduler, accuracy, is_best):
     """
     Saves model checkpoint.
 
@@ -48,14 +48,21 @@ def save_checkpoint(data_name, args, epoch, epochs_since_improvement, model, opt
         state = {'epoch': epoch,
                  'epochs_since_improvement': epochs_since_improvement,
                  'accuracy': accuracy,
-                 'model': model.module.state_dict(),
-                 'optimizer': optimizer.state_dict()}
+                 'intermidate': model.module.intermidate.state_dict(),
+                 'last': model.module.last.state_dict(),
+                 'sub_concept_layer': model.module.sub_concept_layer.state_dict(),
+                 'optimizer': optimizer.state_dict(),
+                 'scheduler': scheduler.state_dict()}
     else:
         state = {'epoch': epoch,
                  'epochs_since_improvement': epochs_since_improvement,
                  'accuracy': accuracy,
-                 'model': model.state_dict(),
-                 'optimizer': optimizer.state_dict()}
+                 'intermidate': model.intermidate.state_dict(),
+                 'last': model.last.state_dict(),
+                 'sub_concept_layer': model.sub_concept_layer.state_dict(),
+                 'optimizer': optimizer.state_dict(),
+                 'scheduler': scheduler.state_dict()}
+
     filename = os.path.join('/home/lkk/code/MIML/models',
                             'checkpoint_' + data_name + '_epoch_'+str(epoch)+'.pth.tar')
 

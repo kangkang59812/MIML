@@ -45,30 +45,33 @@ def main(args):
                  fine_tune=args.fine_tune)
     model = model.to(device)
     optimizer = torch.optim.Adam(
-        [{'params': filter(lambda p: p.requires_grad, model.base_model.parameters()), 'lr': args.fine_tune_lr, 'weight_decay': 0},
-         {'params': model.sub_concept_layer.parameters(), 'lr': args.learning_rate, 'weight_decay': 0}]
+        [{'params': filter(lambda p: p.requires_grad, model.intermidate.parameters()), 'lr': args.fine_tune_lr, 'weight_decay': 1e-4},
+         {'params': filter(lambda p: p.requires_grad, model.last.parameters()), 'lr': args.fine_tune_lr, 'weight_decay': 1e-4},
+         {'params': model.sub_concept_layer.parameters(), 'lr': args.learning_rate, 'weight_decay': 1e-4}]
     )
     if args.mGPUs:
         model = nn.DataParallel(model, device_ids=[0, 1])
 
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=2, eta_min=1e-6)
     criterion = nn.BCELoss()
 
     best_ac = 0
     epochs_since_improvement = 0
     writer = SummaryWriter(log_dir='./log')
     interpret = False
+    start_epoch = 0
+    # if args.checkpoint is not None:
+    #     checkpoint = torch.load(args.checkpoint)
+    #     optimizer.load_state_dict(checkpoint['optimizer'])
+    #     best_ac = checkpoint['accuracy']
+    #     epochs_since_improvement = checkpoint['epochs_since_improvement']
+    #     start_epoch = checkpoint['epoch'] + 1
+    #     if args.mGPUs:
 
-    if args.checkpoint is not None:
-        checkpoint = torch.load(args.checkpoint)
-        optimizer.load_state_dict(checkpoint['optimizer'])
-        best_ac = checkpoint['accuracy']
-        epochs_since_improvement = checkpoint['epochs_since_improvement']
-        ep = checkpoint['epoch']
-        if args.mGPUs:
-
-            model.module.load_state_dict(checkpoint['model'])
-        else:
-            model.load_state_dict(checkpoint['model'])
+    #         model.module.load_state_dict(checkpoint['model'])
+    #     else:
+    #         model.load_state_dict(checkpoint['model'])
     for group in optimizer.param_groups:
         for param in group['params']:
             print('L2 :{}, max :{} , min :{}, mean: {}'.format(
@@ -78,22 +81,16 @@ def main(args):
     print('lr1 :{}'.format(optimizer.param_groups[0]['lr']))
     print('lr2 :{}'.format(optimizer.param_groups[1]['lr']))
 
-    for epoch in range(ep, args.num_epochs):
+    for epoch in range(start_epoch, args.num_epochs):
 
-        if epochs_since_improvement > 0 and epochs_since_improvement % 5 == 0:
-            # scheduler.step()
-            # lr1 = optimizer.param_groups[0]['lr']
-            # lr2 = optimizer.param_groups[1]['lr']
-            # optimizer = torch.optim.Adam(
-            #     [{'params': filter(lambda p: p.requires_grad, model.module.base_model.parameters()), 'lr': lr1, 'weight_decay': 0},
-            #      {'params': model.module.sub_concept_layer.parameters(), 'lr': lr2, 'weight_decay': 0}]
-            # )
-            adjust_learning_rate(optimizer, 0.6)
-            epochs_since_improvement = 0
-        elif epoch > 0 and epoch % 9 == 0:
-            adjust_learning_rate(optimizer, 0.6)
-            epochs_since_improvement = 0
+        # if epochs_since_improvement > 0 and epochs_since_improvement % 4 == 0:
 
+        #     adjust_learning_rate(optimizer, 0.9)
+        #     epochs_since_improvement = 0
+        # elif epoch > 0 and epoch % 5 == 0:
+        #     adjust_learning_rate(optimizer, 0.8)
+        #     epochs_since_improvement = 0
+        scheduler.step()
         interpret = train(args, train_loader=train_loader, model=model, criterion=criterion,
                           optimizer=optimizer, epoch=epoch, writer=writer, interpret=interpret)
 
@@ -109,7 +106,7 @@ def main(args):
 
         # save model
         save_checkpoint(data_name='ResNet', args=args, epoch=epoch, epochs_since_improvement=epochs_since_improvement, model=model,
-                        optimizer=optimizer, accuracy=accuracy, is_best=is_best)
+                        optimizer=optimizer, scheduler=scheduler, accuracy=accuracy, is_best=is_best)
     writer.close()
 
 
@@ -124,7 +121,7 @@ def train(args, train_loader, model, criterion, optimizer, epoch, writer, interp
     mAp_by_label = 0
     f1_by_label = 0
     sum_loss = 0
-    for i, (imgs, tars, lens) in enumerate(train_loader):
+    for i, (imgs, tars) in enumerate(train_loader):
         images = imgs.cuda()
         targets = tars.float().cuda()
         outputs = model(images)
@@ -186,7 +183,7 @@ def validate(args, val_loader, model, criterion, epoch, writer):
     save_targets = None
     save_outputs = None
     with torch.no_grad():
-        for i, (imgs, tars, lens) in enumerate(val_loader):
+        for i, (imgs, tars) in enumerate(val_loader):
             images = imgs.cuda()
             targets = tars.float().cuda()
             pre = torch.zeros(args.batch_size, args.L)
@@ -249,7 +246,7 @@ if __name__ == "__main__":
 
     # paraneters
     parser.add_argument('--num_epochs', type=int, default=80)
-    parser.add_argument('--batch_size', type=int, default=512)
+    parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--L', type=int, default=1024)
     parser.add_argument('--K', type=int, default=20)
     parser.add_argument('--clip_gradient', type=float, default=3.0)
