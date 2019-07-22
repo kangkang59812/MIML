@@ -45,9 +45,9 @@ def main(args):
                  fine_tune=args.fine_tune)
     model = model.to(device)
     optimizer = torch.optim.Adam(
-        [{'params': filter(lambda p: p.requires_grad, model.intermidate.parameters()), 'lr': args.fine_tune_lr, 'weight_decay': 1e-4},
-         {'params': filter(lambda p: p.requires_grad, model.last.parameters()), 'lr': args.fine_tune_lr, 'weight_decay': 1e-4},
-         {'params': model.sub_concept_layer.parameters(), 'lr': args.learning_rate, 'weight_decay': 1e-4}]
+        [{'params': filter(lambda p: p.requires_grad, model.intermidate.parameters()), 'lr': args.fine_tune_lr, 'weight_decay': 0},
+         {'params': filter(lambda p: p.requires_grad, model.last.parameters()), 'lr': args.fine_tune_lr, 'weight_decay': 0},
+         {'params': model.sub_concept_layer.parameters(), 'lr': args.learning_rate, 'weight_decay': 0}]
     )
     if args.mGPUs:
         model = nn.DataParallel(model, device_ids=[0, 1])
