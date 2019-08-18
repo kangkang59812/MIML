@@ -63,7 +63,7 @@ def save_checkpoint(data_name, args, epoch, epochs_since_improvement, model, opt
                  'optimizer': optimizer.state_dict(),
                  'scheduler': scheduler.state_dict()}
 
-    filename = os.path.join('/home/lkk/code/MIML/models',
+    filename = os.path.join('/home/lkk/code/MIML/', args.model_path,
                             'checkpoint_' + data_name + '_epoch_'+str(epoch)+'.pth.tar')
 
     torch.save(state, filename)
